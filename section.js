@@ -253,6 +253,12 @@ function renderProducts() {
                   p.image ||
                   '../../logo.png'
                 }"
+                style="
+                  width:100%;
+                  height:180px;
+                  object-fit:contain;
+                  display:block;
+                "
               >
 
               <div class="card-body">
@@ -385,8 +391,6 @@ function renderOrders() {
 
               </h5>
 
-
-              <!-- NUMERO ORDINE -->
 
               <div
                 class="fw-bold text-primary"
@@ -635,6 +639,20 @@ function openProduct(id) {
 
 async function saveProduct() {
 
+  const button =
+    $('saveProduct');
+
+
+  /*
+    Evita doppi click mentre
+    il prodotto viene inviato.
+  */
+
+  if (button.dataset.saving === '1') {
+    return;
+  }
+
+
   const name =
     $('productName')
       .value
@@ -670,45 +688,72 @@ async function saveProduct() {
     )?.image || null;
 
 
+  const fileInput =
+    $('productImage');
+
+
   const file =
-    $('productImage')
-      .files[0];
-
-
-  if (file) {
-    image =
-      await compress(file);
-  }
-
-
-  const sizes =
-    [
-      ...document.querySelectorAll(
-        '.size-check:checked'
-      )
-    ].map(
-      x => x.value
-    );
-
-
-  if (!sizes.length) {
-
-    return alert(
-      'Seleziona almeno una taglia.'
-    );
-  }
-
-
-  const payload = {
-    id,
-    name,
-    price,
-    image,
-    sizes
-  };
+    fileInput &&
+    fileInput.files &&
+    fileInput.files[0];
 
 
   try {
+
+    button.dataset.saving = '1';
+
+    button.disabled = true;
+
+    button.textContent =
+      'Invio in corso...';
+
+
+    /*
+      Comprimiamo la foto
+      PRIMA dell'invio.
+    */
+
+    if (file) {
+
+      button.textContent =
+        'Ridimensiono foto...';
+
+      image =
+        await compress(file);
+
+    }
+
+
+    const sizes =
+      [
+        ...document.querySelectorAll(
+          '.size-check:checked'
+        )
+      ].map(
+        x => x.value
+      );
+
+
+    if (!sizes.length) {
+
+      throw new Error(
+        'Seleziona almeno una taglia.'
+      );
+    }
+
+
+    button.textContent =
+      'Salvataggio...';
+
+
+    const payload = {
+      id,
+      name,
+      price,
+      image,
+      sizes
+    };
+
 
     await apiFetch(
       path('products'),
@@ -724,15 +769,38 @@ async function saveProduct() {
     );
 
 
+    button.textContent =
+      'Salvato ✓';
+
+
     modal.hide();
 
-    load();
+
+    /*
+      Ricarica subito i prodotti.
+    */
+
+    await load();
 
   }
 
   catch (e) {
 
-    alert(e.message);
+    alert(
+      e.message ||
+      'Errore durante il salvataggio.'
+    );
+
+  }
+
+  finally {
+
+    button.dataset.saving = '0';
+
+    button.disabled = false;
+
+    button.textContent =
+      'Invia prodotto';
 
   }
 }
@@ -1119,10 +1187,19 @@ function downloadExcel() {
 function compress(file) {
 
   return new Promise(
-    resolve => {
+    (resolve, reject) => {
 
       const r =
         new FileReader();
+
+
+      r.onerror = () => {
+        reject(
+          new Error(
+            'Impossibile leggere la foto.'
+          )
+        );
+      };
 
 
       r.onload =
@@ -1132,11 +1209,26 @@ function compress(file) {
             new Image();
 
 
+          im.onerror = () => {
+            reject(
+              new Error(
+                'Impossibile elaborare la foto.'
+              )
+            );
+          };
+
+
           im.onload =
             () => {
 
+              /*
+                FOTO RIDOTTA:
+                massimo 500 px
+                sul lato più lungo.
+              */
+
               const max =
-                900;
+                500;
 
 
               const scale =
@@ -1157,34 +1249,47 @@ function compress(file) {
 
 
               c.width =
-                Math.round(
-                  im.width *
-                  scale
+                Math.max(
+                  1,
+                  Math.round(
+                    im.width *
+                    scale
+                  )
                 );
 
 
               c.height =
-                Math.round(
-                  im.height *
-                  scale
+                Math.max(
+                  1,
+                  Math.round(
+                    im.height *
+                    scale
+                  )
                 );
 
 
-              c
-                .getContext('2d')
-                .drawImage(
-                  im,
-                  0,
-                  0,
-                  c.width,
-                  c.height
-                );
+              const ctx =
+                c.getContext('2d');
 
+
+              ctx.drawImage(
+                im,
+                0,
+                0,
+                c.width,
+                c.height
+              );
+
+
+              /*
+                JPEG qualità 60%.
+                File molto più leggero.
+              */
 
               resolve(
                 c.toDataURL(
                   'image/jpeg',
-                  .82
+                  0.60
                 )
               );
 
